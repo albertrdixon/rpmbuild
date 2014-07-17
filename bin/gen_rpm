@@ -1,0 +1,81 @@
+#!/usr/bin/env ruby
+
+require 'trollop'
+require 'yaml'
+require 'rpmbuild'
+require 'pp'
+
+opts = Trollop::options do
+   version "gen_rpm 2.0.0 (c) 2014 Albert Dixon"
+   banner <<-EOS
+gen_rpm is basically a wrapper around rpmbuild.
+It will generate all spec files and run rpmbuild to create a custom rpm package.
+EOS
+
+   opt :root, "The top level working directory for the build. Give absolute path.", type: String, required: true
+   opt :buildroot, "The directory with the structured rpm sources. Give absolute path.", type: String, required: true
+   opt :spec_config, "A yaml with spec file options. Give absolute path.", type: IO, required: true
+   opt :product, "The name of the product", type: String, required: true
+   opt :client, "The client deployment this is for", type: String, default: nil
+   opt :environment, "The environment this is for", type: String, default: nil
+   opt :verbose, "Verbose output"
+end
+
+Trollop::die :spec_config, "must exist and be readable!" unless File.exists?(opts[:spec_config]) and File.readable?(opts[:spec_config])
+Trollop::die :root, "must exist!" unless Dir.exists?(opts[:root])
+Trollop::die :buildroot, "must exist!" unless Dir.exists?(opts[:buildroot])
+
+defaultspec = (ENV["DEFAULT_SPEC"] || File.join("/", "opt", "tools", "cfg", "default-spec.yml"))
+
+begin
+   default = Psych.load_file(defaultspec).inject({}){|memo,(k,v)| memo[k.to_sym] = v; memo}
+   default.each_pair do |k, v|
+     if v.is_a? String
+       /__(.*)__/.match(v) {|m| v.gsub! /__.*__/, eval(m[1])}
+     elsif v.is_a? Hash
+       v.each_pair do |k1, v1|
+         if v1.is_a? String
+           /__(.*)__/.match(v1) {|m| v1.gsub! /__.*__/, eval(m[1]).to_s}
+         end
+       end
+     end
+   end
+rescue Psych::SyntaxError => e
+  $stderr.puts "#{e.file}: #{e.message}"
+  default = {}
+rescue => e
+  $stderr.puts "ERROR: #{e.message}"
+  $stderr.puts e.backtrace
+  default = {}
+end
+
+begin
+   spec = Psych.load_file(opts[:spec_config]).inject({}){|memo,(k,v)| memo[k.to_sym] = v; memo}
+   spec.merge!(default) do |key, v1, v2|
+     if v1.is_a?(Hash) and v2.is_a?(Hash)
+       v1.merge(v2)
+     else
+       v1
+     end
+   end
+
+   name = []
+   name << "msp"
+   if not opts[:client].nil?
+     name << opts[:client]
+   end
+   name << opts[:product]
+   spec[:tags].store :name, name.join("-")
+   spec[:tags][:release] = (opts[:environment].nil? ? "all" : opts[:environment])
+
+   $stdout.puts "** Using rpmbuild #{Gem.loaded_specs['rpmbuild'].version} **"
+   $stdout.puts "default spec-yaml: #{defaultspec}"
+   $stdout.puts "our spec-yaml:     #{opts[:spec_config].path}"
+   $stdout.puts "Running rpmbuild..."
+
+   RPMBuild.new(opts[:root], opts[:buildroot], {spec: spec, log_level: (opts.include?(:verbose) ? Logger::DEBUG : Logger::INFO)}).build
+rescue Psych::SyntaxError => e
+   $stderr.puts "#{e.file}: #{e.message}"
+rescue Exception => e
+   $stderr.puts "ERROR: #{e.message}", e.backtrace
+end

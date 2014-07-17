@@ -1,0 +1,31 @@
+:arch: "noarch"
+:user: "msp"
+:group: "msp"
+:global_filemode: "0640"
+:global_dirmode: "0750"
+:bin_filemode: "0750"
+:lib_filemode: "0640"
+:tags:
+        :autoreqprov: no
+        :packager: "Some Packager <some.address@example.com>"
+        :vendor: "Some Vendor, LLC"
+        :license: "__Time.now.year__ Some Vendor, LLC"
+        :url: "http://www.example.com"
+:rpmrc:
+        :macrofiles:
+                - "/usr/lib/macros"
+                - "/usr/lib/rpm/%{_target}/macros"
+                - "/usr/lib/rpm/suse_macros"
+                - "/etc/rpm/macros.specspo"
+                - "/etc/rpm/macros.prelink"
+                - "/etc/rpm/macros.solve"
+                - "/etc/rpm/macros.up2date"
+                - "/etc/rpm/macros"
+                - "/etc/rpm/%{_target}/macros"
+                - "~/.rpmmacros"
+        :macros:
+                - "%__os_install_post %{nil}"
+                - "%define _binary_filedigest_algorithm 1"
+                - "%define _binary_payload 1"
+                - "%__spec_install_post /usr/lib/rpm/brp-strip /usr/lib/rpm/brp-strip-comment-note %{nil}"
+                - "%define __prelink_undo_cmd /bin/cat prelink library"
